@@ -29,7 +29,7 @@ func RunSemgrep(target string) ([]model.SASTFinding, error) {
 		return nil, fmt.Errorf("semgrep binary not found (skipping SAST)")
 	}
 
-	cmd := exec.Command("semgrep", "scan", "--config", "p/security-audit", "--json", target)
+	cmd := exec.Command("semgrep", "scan", "--config", "auto", "--json", target)
 	cmd.Env = append(os.Environ(), "SEMGREP_SEND_METRICS=off")
 	var outBuf bytes.Buffer
 	cmd.Stdout = &outBuf
