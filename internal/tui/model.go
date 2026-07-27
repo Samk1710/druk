@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/samk/druk/internal/attacksurface"
 	"github.com/samk/druk/internal/cve"
 	"github.com/samk/druk/internal/model"
 	"github.com/samk/druk/internal/repo"
@@ -37,15 +38,15 @@ type RepoLoadedMsg struct {
 type ErrorMsg error
 
 type AppModel struct {
-	target   string
-	state    State
-	spinner  spinner.Model
-	quitting bool
-	err      error
-	report   *model.Report
-
-	options []ScannerOption
-	cursor  int
+	target    string
+	state     State
+	spinner   spinner.Model
+	quitting  bool
+	err       error
+	report    *model.Report
+	dashboard dashboardModel
+	options   []ScannerOption
+	cursor    int
 }
 
 func InitialModel(target string, sca, sast, secrets, autoStart bool) AppModel {
@@ -97,6 +98,7 @@ func (m AppModel) loadRepoCmd() tea.Msg {
 	var findings []model.Finding
 	var sastFindings []model.SASTFinding
 	var secretFindings []model.SecretFinding
+	var surface model.AttackSurface
 
 	if runSBOM {
 		eg.Go(func() error {
@@ -140,6 +142,11 @@ func (m AppModel) loadRepoCmd() tea.Msg {
 		})
 	}
 
+	eg.Go(func() error {
+		surface, _ = attacksurface.Detect(path)
+		return nil
+	})
+
 	if err := eg.Wait(); err != nil {
 		if cleanup != nil {
 			cleanup()
@@ -151,6 +158,7 @@ func (m AppModel) loadRepoCmd() tea.Msg {
 	report.Findings = findings
 	report.SAST = sastFindings
 	report.Secrets = secretFindings
+	report.AttackSurface = surface
 
 	return RepoLoadedMsg{
 		Report:  report,
@@ -188,9 +196,9 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Cleanup != nil {
 			msg.Cleanup()
 		}
+		m.dashboard = newDashboard(m.report)
 		m.state = StateDone
-		m.quitting = true
-		return m, tea.Quit
+		return m, nil
 	case ErrorMsg:
 		m.err = msg
 		m.state = StateDone
@@ -203,6 +211,13 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 	}
+
+	if m.state == StateDone {
+		var cmd tea.Cmd
+		m.dashboard, cmd = m.dashboard.Update(msg)
+		return m, cmd
+	}
+
 	return m, nil
 }
 
@@ -223,43 +238,7 @@ func (m AppModel) View() string {
 	}
 
 	if m.state == StateDone && m.report != nil {
-		var sb strings.Builder
-		sb.WriteString("\n")
-		sb.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FFFFFF")).MarginLeft(2).Render("Analysis Complete"))
-		sb.WriteString("\n\n")
-
-		sb.WriteString(statKeyStyle.Render("Detected Language: "))
-		sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#FF00FF")).Bold(true).Render(m.report.Repo.Language) + "\n")
-
-		if m.options[0].Selected {
-			sb.WriteString(statKeyStyle.Render("Dependencies: "))
-			sb.WriteString(statValStyle.Render(fmt.Sprintf("%d", len(m.report.SBOM.Components))) + "\n")
-
-			sb.WriteString(statKeyStyle.Render("Vulnerabilities: "))
-			vulnColor := "#04B575"
-			if len(m.report.Findings) > 0 {
-				vulnColor = "#FF0000"
-			}
-			sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(vulnColor)).Bold(true).Render(fmt.Sprintf("%d", len(m.report.Findings))) + "\n")
-		}
-		if m.options[1].Selected {
-			sb.WriteString(statKeyStyle.Render("SAST Issues:     "))
-			sastColor := "#04B575"
-			if len(m.report.SAST) > 0 {
-				sastColor = "#FF0000"
-			}
-			sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(sastColor)).Bold(true).Render(fmt.Sprintf("%d", len(m.report.SAST))) + "\n")
-		}
-		if m.options[2].Selected {
-			sb.WriteString(statKeyStyle.Render("Secrets Found:   "))
-			secColor := "#04B575"
-			if len(m.report.Secrets) > 0 {
-				secColor = "#FF0000"
-			}
-			sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(secColor)).Bold(true).Render(fmt.Sprintf("%d", len(m.report.Secrets))) + "\n")
-		}
-		sb.WriteString("\n")
-		return sb.String()
+		return m.dashboard.View()
 	}
 
 	if m.state == StateSelection {

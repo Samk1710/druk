@@ -39,10 +39,21 @@ type SecretFinding struct {
 	Line        int
 }
 
+type Entrypoint struct {
+	Path      string
+	Line      int
+	Framework string
+}
+
+type AttackSurface struct {
+	Entrypoints []Entrypoint
+}
+
 type Report struct {
-	Repo     RepoInfo
-	SBOM     SBOM
-	Findings []Finding
-	SAST     []SASTFinding
-	Secrets  []SecretFinding
+	Repo          RepoInfo
+	SBOM          SBOM
+	Findings      []Finding
+	SAST          []SASTFinding
+	Secrets       []SecretFinding
+	AttackSurface AttackSurface
 }
