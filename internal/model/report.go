@@ -15,12 +15,14 @@ type SBOM struct {
 }
 
 type Finding struct {
-	ID         string
-	Aliases    []string
-	Severity   string
-	Package    string
-	Version    string
-	FixVersion string
+	ID           string
+	Aliases      []string
+	Severity     string
+	Package      string
+	Version      string
+	FixVersion   string
+	Reachability string   // "reachable", "unreachable", "unknown"
+	CallPath     []string // trace of function calls or files
 }
 
 type SASTFinding struct {

@@ -30,10 +30,11 @@ func newDashboard(report *model.Report) dashboardModel {
 		{Title: "Package", Width: 20},
 		{Title: "Version", Width: 10},
 		{Title: "Severity", Width: 10},
+		{Title: "Reachability", Width: 15},
 	}
 	var vulnRows []table.Row
 	for _, f := range report.Findings {
-		vulnRows = append(vulnRows, table.Row{f.ID, f.Package, f.Version, f.Severity})
+		vulnRows = append(vulnRows, table.Row{f.ID, f.Package, f.Version, f.Severity, f.Reachability})
 	}
 	tVuln := table.New(
 		table.WithColumns(vulnColumns),
