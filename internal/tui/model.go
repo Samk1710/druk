@@ -48,27 +48,34 @@ type AppModel struct {
 	cursor  int
 }
 
-func InitialModel(target string) AppModel {
+func InitialModel(target string, sca, sast, secrets, autoStart bool) AppModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
 
 	opts := []ScannerOption{
-		{"SBOM & Vulnerabilities", true},
-		{"SAST (Semgrep)", true},
-		{"Secrets (Gitleaks)", true},
+		{"SBOM & Vulnerabilities", sca},
+		{"SAST (Semgrep)", sast},
+		{"Secrets (Gitleaks)", secrets},
+	}
+
+	state := StateSelection
+	if autoStart {
+		state = StateScanning
 	}
 
 	return AppModel{
 		target:  target,
-		state:   StateSelection,
+		state:   state,
 		spinner: s,
 		options: opts,
 	}
 }
 
 func (m AppModel) Init() tea.Cmd {
-	// Don't start spinner until we hit Scanning state
+	if m.state == StateScanning {
+		return tea.Batch(m.spinner.Tick, m.loadRepoCmd)
+	}
 	return nil
 }
 
@@ -214,7 +221,7 @@ func (m AppModel) View() string {
 	if m.err != nil {
 		return errorStyle.Render(fmt.Sprintf("Error: %v", m.err)) + "\n\n"
 	}
-	
+
 	if m.state == StateDone && m.report != nil {
 		var sb strings.Builder
 		sb.WriteString("\n")
@@ -223,11 +230,11 @@ func (m AppModel) View() string {
 
 		sb.WriteString(statKeyStyle.Render("Detected Language: "))
 		sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#FF00FF")).Bold(true).Render(m.report.Repo.Language) + "\n")
-		
+
 		if m.options[0].Selected {
 			sb.WriteString(statKeyStyle.Render("Dependencies: "))
 			sb.WriteString(statValStyle.Render(fmt.Sprintf("%d", len(m.report.SBOM.Components))) + "\n")
-			
+
 			sb.WriteString(statKeyStyle.Render("Vulnerabilities: "))
 			vulnColor := "#04B575"
 			if len(m.report.Findings) > 0 {
