@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/samk/druk/internal/model"
 	"github.com/samk/druk/internal/repo"
+	"github.com/samk/druk/internal/sbom"
 )
 
 type RepoLoadedMsg struct {
@@ -44,9 +45,20 @@ func (m AppModel) loadRepoCmd() tea.Msg {
 
 	lang := repo.DetectLanguage(path)
 
+	components, err := sbom.Generate(path)
+	if err != nil {
+		if cleanup != nil {
+			cleanup()
+		}
+		return ErrorMsg(fmt.Errorf("sbom generation failed: %w", err))
+	}
+
 	report := &model.Report{
 		Repo: model.RepoInfo{
 			Language: lang,
+		},
+		SBOM: model.SBOM{
+			Components: components,
 		},
 	}
 
@@ -85,10 +97,10 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m AppModel) View() string {
 	if m.err != nil {
-		return fmt.Sprintf("Error: %v\n", m.err)
+		return fmt.Sprintf("\n  Error: %v\n\n", m.err)
 	}
 	if m.report != nil {
-		return fmt.Sprintf("\n  Detected Language: %s\n\n", m.report.Repo.Language)
+		return fmt.Sprintf("\n  Detected Language: %s\n  Dependencies: %d\n\n", m.report.Repo.Language, len(m.report.SBOM.Components))
 	}
 	if m.quitting {
 		return "Exiting...\n"
