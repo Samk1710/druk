@@ -6,22 +6,54 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/samk/druk/internal/model"
+	"github.com/samk/druk/internal/repo"
 )
 
-type AppModel struct {
-	spinner  spinner.Model
-	quitting bool
+type RepoLoadedMsg struct {
+	Report  *model.Report
+	Cleanup func()
 }
 
-func InitialModel() AppModel {
+type ErrorMsg error
+
+type AppModel struct {
+	target   string
+	spinner  spinner.Model
+	quitting bool
+	err      error
+	report   *model.Report
+}
+
+func InitialModel(target string) AppModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
-	return AppModel{spinner: s}
+	return AppModel{target: target, spinner: s}
 }
 
 func (m AppModel) Init() tea.Cmd {
-	return m.spinner.Tick
+	return tea.Batch(m.spinner.Tick, m.loadRepoCmd)
+}
+
+func (m AppModel) loadRepoCmd() tea.Msg {
+	path, cleanup, err := repo.Load(m.target)
+	if err != nil {
+		return ErrorMsg(err)
+	}
+
+	lang := repo.DetectLanguage(path)
+
+	report := &model.Report{
+		Repo: model.RepoInfo{
+			Language: lang,
+		},
+	}
+
+	return RepoLoadedMsg{
+		Report:  report,
+		Cleanup: cleanup,
+	}
 }
 
 func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -32,6 +64,17 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.quitting = true
 			return m, tea.Quit
 		}
+	case RepoLoadedMsg:
+		m.report = msg.Report
+		if msg.Cleanup != nil {
+			msg.Cleanup()
+		}
+		m.quitting = true
+		return m, tea.Quit
+	case ErrorMsg:
+		m.err = msg
+		m.quitting = true
+		return m, tea.Quit
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
@@ -41,9 +84,19 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m AppModel) View() string {
+	if m.err != nil {
+		return fmt.Sprintf("Error: %v\n", m.err)
+	}
+	if m.report != nil {
+		return fmt.Sprintf("\n  Detected Language: %s\n\n", m.report.Repo.Language)
+	}
 	if m.quitting {
 		return "Exiting...\n"
 	}
-	str := fmt.Sprintf("\n\n   %s Scanning repository...\n\n", m.spinner.View())
-	return str
+
+	targetDisplay := m.target
+	if targetDisplay == "" || targetDisplay == "." {
+		targetDisplay = "local directory"
+	}
+	return fmt.Sprintf("\n\n   %s Scanning repository: %s\n\n", m.spinner.View(), targetDisplay)
 }
