@@ -52,7 +52,7 @@ func InitialModel(target string) AppModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
-	
+
 	opts := []ScannerOption{
 		{"SBOM & Vulnerabilities", true},
 		{"SAST (Semgrep)", true},
@@ -158,23 +158,17 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "esc", "ctrl+c":
 			m.quitting = true
 			return m, tea.Quit
-		case "up", "k":
-			if m.state == StateSelection {
-				m.cursor--
-				if m.cursor < 0 {
-					m.cursor = len(m.options) - 1
-				}
+		case "1":
+			if m.state == StateSelection && len(m.options) > 0 {
+				m.options[0].Selected = !m.options[0].Selected
 			}
-		case "down", "j":
-			if m.state == StateSelection {
-				m.cursor++
-				if m.cursor >= len(m.options) {
-					m.cursor = 0
-				}
+		case "2":
+			if m.state == StateSelection && len(m.options) > 1 {
+				m.options[1].Selected = !m.options[1].Selected
 			}
-		case " ":
-			if m.state == StateSelection {
-				m.options[m.cursor].Selected = !m.options[m.cursor].Selected
+		case "3":
+			if m.state == StateSelection && len(m.options) > 2 {
+				m.options[2].Selected = !m.options[2].Selected
 			}
 		case "enter":
 			if m.state == StateSelection {
@@ -227,19 +221,13 @@ func (m AppModel) View() string {
 	}
 
 	if m.state == StateSelection {
-		s := "\n  Select Scanners to Run (Space to toggle, Enter to start):\n\n"
+		s := "\n  Select Scanners to Run (Press 1, 2, 3 to toggle, Enter to start):\n\n"
 		for i, opt := range m.options {
-			cursor := " " // no cursor
-			if m.cursor == i {
-				cursor = ">" // cursor
-			}
-
 			checked := " "
 			if opt.Selected {
 				checked = "x"
 			}
-
-			s += fmt.Sprintf("  %s [%s] %s\n", cursor, checked, opt.Name)
+			s += fmt.Sprintf("  %d. [%s] %s\n", i+1, checked, opt.Name)
 		}
 		s += "\n  Press q to quit.\n"
 		return s

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 
 	"github.com/samk/druk/internal/model"
@@ -29,6 +30,7 @@ func RunSemgrep(target string) ([]model.SASTFinding, error) {
 	}
 
 	cmd := exec.Command("semgrep", "scan", "--config", "p/security-audit", "--json", target)
+	cmd.Env = append(os.Environ(), "SEMGREP_SEND_METRICS=off")
 	var outBuf bytes.Buffer
 	cmd.Stdout = &outBuf
 

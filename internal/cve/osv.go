@@ -69,7 +69,7 @@ func QueryOSV(components []model.Component) ([]model.Finding, error) {
 		}
 
 		reqBody, _ := json.Marshal(osvRequest{Queries: queries})
-		
+
 		req, err := http.NewRequest("POST", osvURL, bytes.NewBuffer(reqBody))
 		if err != nil {
 			return nil, err

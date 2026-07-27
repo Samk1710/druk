@@ -26,14 +26,14 @@ func RunGitleaks(target string) ([]model.SecretFinding, error) {
 	defer os.Remove(tmpReport)
 
 	cmd := exec.Command("gitleaks", "detect", "--no-git", "--source", target, "--report-format", "json", "--report-path", tmpReport)
-	
+
 	// gitleaks returns non-zero if leaks are found
 	_ = cmd.Run()
 
 	b, err := os.ReadFile(tmpReport)
 	if err != nil {
 		// If file doesn't exist, gitleaks might have failed or found nothing.
-		return nil, nil 
+		return nil, nil
 	}
 
 	var raw gitleaksOutput

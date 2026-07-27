@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 
 	"github.com/samk/druk/internal/model"
@@ -24,6 +25,7 @@ func Generate(target string) ([]model.Component, error) {
 	}
 
 	cmd := exec.Command("syft", "dir:"+target, "-o", "cyclonedx-json", "-q") // -q for quiet to avoid stderr noise
+	cmd.Env = append(os.Environ(), "SYFT_CHECK_FOR_APP_UPDATE=false")
 	var outBuf bytes.Buffer
 	var errBuf bytes.Buffer
 	cmd.Stdout = &outBuf
