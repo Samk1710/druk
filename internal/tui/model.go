@@ -199,38 +199,76 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+var (
+	titleStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FFFFFF")).Margin(1, 0, 1, 2)
+	activeStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575")).Bold(true)
+	inactiveStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000")).Bold(true)
+	dimStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("#737373"))
+	labelStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#E0E0E0"))
+	statKeyStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#A0A0A0")).MarginLeft(2)
+	statValStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575")).Bold(true)
+	errorStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000")).Bold(true).MarginLeft(2)
+)
+
 func (m AppModel) View() string {
 	if m.err != nil {
-		return fmt.Sprintf("\n  Error: %v\n\n", m.err)
+		return errorStyle.Render(fmt.Sprintf("Error: %v", m.err)) + "\n\n"
 	}
 	
 	if m.state == StateDone && m.report != nil {
 		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf("\n  Detected Language: %s\n", m.report.Repo.Language))
+		sb.WriteString("\n")
+		sb.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FFFFFF")).MarginLeft(2).Render("Analysis Complete"))
+		sb.WriteString("\n\n")
+
+		sb.WriteString(statKeyStyle.Render("Detected Language: "))
+		sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#FF00FF")).Bold(true).Render(m.report.Repo.Language) + "\n")
+		
 		if m.options[0].Selected {
-			sb.WriteString(fmt.Sprintf("  Dependencies: %d\n  Vulnerabilities Found: %d\n", len(m.report.SBOM.Components), len(m.report.Findings)))
+			sb.WriteString(statKeyStyle.Render("Dependencies: "))
+			sb.WriteString(statValStyle.Render(fmt.Sprintf("%d", len(m.report.SBOM.Components))) + "\n")
+			
+			sb.WriteString(statKeyStyle.Render("Vulnerabilities: "))
+			vulnColor := "#04B575"
+			if len(m.report.Findings) > 0 {
+				vulnColor = "#FF0000"
+			}
+			sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(vulnColor)).Bold(true).Render(fmt.Sprintf("%d", len(m.report.Findings))) + "\n")
 		}
 		if m.options[1].Selected {
-			sb.WriteString(fmt.Sprintf("  SAST Issues: %d\n", len(m.report.SAST)))
+			sb.WriteString(statKeyStyle.Render("SAST Issues:     "))
+			sastColor := "#04B575"
+			if len(m.report.SAST) > 0 {
+				sastColor = "#FF0000"
+			}
+			sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(sastColor)).Bold(true).Render(fmt.Sprintf("%d", len(m.report.SAST))) + "\n")
 		}
 		if m.options[2].Selected {
-			sb.WriteString(fmt.Sprintf("  Secrets Found: %d\n", len(m.report.Secrets)))
+			sb.WriteString(statKeyStyle.Render("Secrets Found:   "))
+			secColor := "#04B575"
+			if len(m.report.Secrets) > 0 {
+				secColor = "#FF0000"
+			}
+			sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(secColor)).Bold(true).Render(fmt.Sprintf("%d", len(m.report.Secrets))) + "\n")
 		}
 		sb.WriteString("\n")
 		return sb.String()
 	}
 
 	if m.state == StateSelection {
-		s := "\n  Select Scanners to Run (Press 1, 2, 3 to toggle, Enter to start):\n\n"
+		var sb strings.Builder
+		sb.WriteString(titleStyle.Render("Select Scanners to Run (Press 1, 2, 3 to toggle, Enter to start):") + "\n")
 		for i, opt := range m.options {
-			checked := " "
+			mark := inactiveStyle.Render("✗")
+			nameStyle := dimStyle
 			if opt.Selected {
-				checked = "x"
+				mark = activeStyle.Render("✓")
+				nameStyle = labelStyle
 			}
-			s += fmt.Sprintf("  %d. [%s] %s\n", i+1, checked, opt.Name)
+			sb.WriteString(fmt.Sprintf("  %d. [%s] %s\n", i+1, mark, nameStyle.Render(opt.Name)))
 		}
-		s += "\n  Press q to quit.\n"
-		return s
+		sb.WriteString("\n" + dimStyle.MarginLeft(2).Render("Press q to quit.") + "\n")
+		return sb.String()
 	}
 
 	if m.state == StateScanning {
@@ -238,11 +276,12 @@ func (m AppModel) View() string {
 		if targetDisplay == "" || targetDisplay == "." {
 			targetDisplay = "local directory"
 		}
-		return fmt.Sprintf("\n\n   %s Scanning repository: %s\n\n", m.spinner.View(), targetDisplay)
+		scanMsg := lipgloss.NewStyle().Foreground(lipgloss.Color("#E0E0E0")).Render(fmt.Sprintf("Scanning repository: %s", targetDisplay))
+		return fmt.Sprintf("\n\n   %s %s\n\n", m.spinner.View(), scanMsg)
 	}
 
 	if m.quitting {
-		return "Exiting...\n"
+		return dimStyle.MarginLeft(2).Render("Exiting...") + "\n"
 	}
 
 	return ""
