@@ -17,10 +17,11 @@ var (
 )
 
 type dashboardModel struct {
-	activeTab int
-	vulnTable table.Model
-	sastTable table.Model
-	report    *model.Report
+	activeTab    int
+	vulnTable    table.Model
+	sastTable    table.Model
+	secretsTable table.Model
+	report       *model.Report
 }
 
 func newDashboard(report *model.Report) dashboardModel {
@@ -55,9 +56,6 @@ func newDashboard(report *model.Report) dashboardModel {
 	for _, s := range report.SAST {
 		sastRows = append(sastRows, table.Row{"Semgrep", s.Severity, fmt.Sprintf("%s:%d", s.Path, s.Line), s.Message})
 	}
-	for _, sec := range report.Secrets {
-		sastRows = append(sastRows, table.Row{"Gitleaks", sec.Severity, fmt.Sprintf("%s:%d", sec.Path, sec.Line), sec.RuleID})
-	}
 	tSast := table.New(
 		table.WithColumns(sastColumns),
 		table.WithRows(sastRows),
@@ -66,11 +64,30 @@ func newDashboard(report *model.Report) dashboardModel {
 	)
 	tSast.SetStyles(s)
 
+	secretsColumns := []table.Column{
+		{Title: "Scanner", Width: 10},
+		{Title: "Severity", Width: 10},
+		{Title: "File", Width: 30},
+		{Title: "Message", Width: 40},
+	}
+	var secretsRows []table.Row
+	for _, sec := range report.Secrets {
+		secretsRows = append(secretsRows, table.Row{"Gitleaks", sec.Severity, fmt.Sprintf("%s:%d", sec.Path, sec.Line), sec.RuleID})
+	}
+	tSecrets := table.New(
+		table.WithColumns(secretsColumns),
+		table.WithRows(secretsRows),
+		table.WithFocused(true),
+		table.WithHeight(10),
+	)
+	tSecrets.SetStyles(s)
+
 	return dashboardModel{
-		activeTab: 0,
-		vulnTable: tVuln,
-		sastTable: tSast,
-		report:    report,
+		activeTab:    0,
+		vulnTable:    tVuln,
+		sastTable:    tSast,
+		secretsTable: tSecrets,
+		report:       report,
 	}
 }
 
@@ -79,10 +96,10 @@ func (m dashboardModel) Update(msg tea.Msg) (dashboardModel, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "tab":
-			m.activeTab = (m.activeTab + 1) % 3
+			m.activeTab = (m.activeTab + 1) % 4
 			return m, nil
 		case "shift+tab":
-			m.activeTab = (m.activeTab - 1 + 3) % 3
+			m.activeTab = (m.activeTab - 1 + 4) % 4
 			return m, nil
 		}
 	}
@@ -92,12 +109,14 @@ func (m dashboardModel) Update(msg tea.Msg) (dashboardModel, tea.Cmd) {
 		m.vulnTable, cmd = m.vulnTable.Update(msg)
 	} else if m.activeTab == 2 {
 		m.sastTable, cmd = m.sastTable.Update(msg)
+	} else if m.activeTab == 3 {
+		m.secretsTable, cmd = m.secretsTable.Update(msg)
 	}
 	return m, cmd
 }
 
 func (m dashboardModel) View() string {
-	tabs := []string{"Overview", "Vulnerabilities", "SAST & Secrets"}
+	tabs := []string{"Overview", "Vulnerabilities", "SAST", "Secrets"}
 	var renderedTabs []string
 	for i, t := range tabs {
 		if i == m.activeTab {
@@ -124,6 +143,8 @@ func (m dashboardModel) View() string {
 		content = m.vulnTable.View()
 	case 2:
 		content = m.sastTable.View()
+	case 3:
+		content = m.secretsTable.View()
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, row, tabWindowStyle.Render(content))

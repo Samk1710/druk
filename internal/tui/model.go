@@ -243,7 +243,7 @@ func (m AppModel) View() string {
 
 	if m.state == StateSelection {
 		var sb strings.Builder
-		sb.WriteString(titleStyle.Render("Select Scanners to Run (Press 1, 2, 3 to toggle, Enter to start):") + "\n")
+		sb.WriteString(titleStyle.Render("Select Scanners to Run (Press 1, 2, 3 to toggle, Enter to start):") + "\n\n")
 		for i, opt := range m.options {
 			mark := inactiveStyle.Render("✗")
 			nameStyle := dimStyle
@@ -254,7 +254,14 @@ func (m AppModel) View() string {
 			sb.WriteString(fmt.Sprintf("  %d. [%s] %s\n", i+1, mark, nameStyle.Render(opt.Name)))
 		}
 		sb.WriteString("\n" + dimStyle.MarginLeft(2).Render("Press q to quit.") + "\n")
-		return sb.String()
+		
+		boxStyle := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("205")).
+			Padding(1, 2).
+			Margin(1, 2)
+			
+		return "\n" + boxStyle.Render(sb.String()) + "\n"
 	}
 
 	if m.state == StateScanning {
