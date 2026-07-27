@@ -6,6 +6,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/samk/druk/internal/cve"
 	"github.com/samk/druk/internal/model"
 	"github.com/samk/druk/internal/repo"
 	"github.com/samk/druk/internal/sbom"
@@ -53,6 +54,14 @@ func (m AppModel) loadRepoCmd() tea.Msg {
 		return ErrorMsg(fmt.Errorf("sbom generation failed: %w", err))
 	}
 
+	findings, err := cve.QueryVulnerableCode(components)
+	if err != nil {
+		if cleanup != nil {
+			cleanup()
+		}
+		return ErrorMsg(fmt.Errorf("cve querying failed: %w", err))
+	}
+
 	report := &model.Report{
 		Repo: model.RepoInfo{
 			Language: lang,
@@ -60,6 +69,7 @@ func (m AppModel) loadRepoCmd() tea.Msg {
 		SBOM: model.SBOM{
 			Components: components,
 		},
+		Findings: findings,
 	}
 
 	return RepoLoadedMsg{
@@ -100,7 +110,7 @@ func (m AppModel) View() string {
 		return fmt.Sprintf("\n  Error: %v\n\n", m.err)
 	}
 	if m.report != nil {
-		return fmt.Sprintf("\n  Detected Language: %s\n  Dependencies: %d\n\n", m.report.Repo.Language, len(m.report.SBOM.Components))
+		return fmt.Sprintf("\n  Detected Language: %s\n  Dependencies: %d\n  Vulnerabilities Found: %d\n\n", m.report.Repo.Language, len(m.report.SBOM.Components), len(m.report.Findings))
 	}
 	if m.quitting {
 		return "Exiting...\n"

@@ -13,6 +13,7 @@ type cyclonedxJSON struct {
 	Components []struct {
 		Name    string `json:"name"`
 		Version string `json:"version"`
+		Purl    string `json:"purl"`
 	} `json:"components"`
 }
 
@@ -42,6 +43,7 @@ func Generate(target string) ([]model.Component, error) {
 		components = append(components, model.Component{
 			Name:    c.Name,
 			Version: c.Version,
+			Purl:    c.Purl,
 		})
 	}
 

@@ -7,6 +7,7 @@ type RepoInfo struct {
 type Component struct {
 	Name    string
 	Version string
+	Purl    string
 }
 
 type SBOM struct {
@@ -15,14 +16,33 @@ type SBOM struct {
 
 type Finding struct {
 	ID         string
+	Aliases    []string
 	Severity   string
 	Package    string
 	Version    string
 	FixVersion string
 }
 
+type SASTFinding struct {
+	ID       string
+	Message  string
+	Severity string
+	Path     string
+	Line     int
+}
+
+type SecretFinding struct {
+	RuleID      string
+	Description string
+	Severity    string
+	Path        string
+	Line        int
+}
+
 type Report struct {
 	Repo     RepoInfo
 	SBOM     SBOM
 	Findings []Finding
+	SAST     []SASTFinding
+	Secrets  []SecretFinding
 }
