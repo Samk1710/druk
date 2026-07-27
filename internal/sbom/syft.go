@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 
+	"github.com/samk/druk/internal/cache"
 	"github.com/samk/druk/internal/model"
 )
 
@@ -20,6 +22,21 @@ type cyclonedxJSON struct {
 
 // Generate runs syft to generate a CycloneDX JSON SBOM and parses it into our internal model.
 func Generate(target string) ([]model.Component, error) {
+	// 1. Check Cache
+	cacheDir, err := cache.GetCacheDir()
+	if err == nil {
+		repoHash, err := cache.ComputeHash(target)
+		if err == nil {
+			cacheFile := filepath.Join(cacheDir, repoHash, "sbom.json")
+			if data, err := os.ReadFile(cacheFile); err == nil {
+				var cachedComponents []model.Component
+				if err := json.Unmarshal(data, &cachedComponents); err == nil {
+					return cachedComponents, nil
+				}
+			}
+		}
+	}
+
 	if _, err := exec.LookPath("syft"); err != nil {
 		return nil, fmt.Errorf("syft binary not found in PATH: %w", err)
 	}
@@ -47,6 +64,17 @@ func Generate(target string) ([]model.Component, error) {
 			Version: c.Version,
 			Purl:    c.Purl,
 		})
+	}
+
+	// 2. Write Cache
+	if cacheDir != "" {
+		if repoHash, err := cache.ComputeHash(target); err == nil {
+			cDir := filepath.Join(cacheDir, repoHash)
+			os.MkdirAll(cDir, 0755)
+			if cacheData, err := json.Marshal(components); err == nil {
+				os.WriteFile(filepath.Join(cDir, "sbom.json"), cacheData, 0644)
+			}
+		}
 	}
 
 	return components, nil

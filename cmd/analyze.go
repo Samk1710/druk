@@ -13,7 +13,6 @@ var (
 	runSAST    bool
 	runSecrets bool
 	runSCA     bool
-	runReach   bool
 	runAll     bool
 )
 
@@ -27,21 +26,19 @@ var analyzeCmd = &cobra.Command{
 			target = args[0]
 		}
 
-		autoStart := runSAST || runSecrets || runSCA || runReach || runAll
+		autoStart := runSAST || runSecrets || runSCA || runAll
 
 		sca := true
 		sast := true
 		secrets := true
-		reach := true
 
 		if autoStart {
 			sca = runSCA || runAll
 			sast = runSAST || runAll
 			secrets = runSecrets || runAll
-			reach = runReach || runAll
 		}
 
-		p := tea.NewProgram(tui.InitialModel(target, sca, sast, secrets, reach, autoStart))
+		p := tea.NewProgram(tui.InitialModel(target, sca, sast, secrets, autoStart))
 		if _, err := p.Run(); err != nil {
 			fmt.Printf("Alas, there's been an error: %v", err)
 			os.Exit(1)
@@ -53,7 +50,6 @@ func init() {
 	analyzeCmd.Flags().BoolVar(&runSAST, "sast", false, "Run SAST scanner (Semgrep)")
 	analyzeCmd.Flags().BoolVar(&runSecrets, "secrets", false, "Run Secrets scanner (Gitleaks)")
 	analyzeCmd.Flags().BoolVar(&runSCA, "sca", false, "Run SCA scanner (SBOM & CVEs)")
-	analyzeCmd.Flags().BoolVar(&runReach, "reachability", false, "Run Reachability (Atom) analysis")
 	analyzeCmd.Flags().BoolVar(&runAll, "all", false, "Run all scanners instantly")
 	rootCmd.AddCommand(analyzeCmd)
 }

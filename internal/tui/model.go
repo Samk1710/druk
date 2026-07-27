@@ -50,7 +50,7 @@ type AppModel struct {
 	cursor    int
 }
 
-func InitialModel(target string, sca, sast, secrets, reach, autoStart bool) AppModel {
+func InitialModel(target string, sca, sast, secrets, autoStart bool) AppModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
@@ -59,7 +59,6 @@ func InitialModel(target string, sca, sast, secrets, reach, autoStart bool) AppM
 		{"SBOM & Vulnerabilities", sca},
 		{"SAST (Semgrep)", sast},
 		{"Secrets (Gitleaks)", secrets},
-		{"Reachability Engine (Atom)", reach},
 	}
 
 	state := StateSelection
@@ -86,7 +85,6 @@ func (m AppModel) loadRepoCmd() tea.Msg {
 	runSBOM := m.options[0].Selected
 	runSAST := m.options[1].Selected
 	runSecrets := m.options[2].Selected
-	runReach := m.options[3].Selected
 
 	path, cleanup, err := repo.Load(m.target)
 	if err != nil {
@@ -151,7 +149,7 @@ func (m AppModel) loadRepoCmd() tea.Msg {
 		return nil
 	})
 
-	if runReach {
+	if runSBOM {
 		eg.Go(func() error {
 			cpgPath, _ = reachability.GenerateCPG(path, report.Repo.Language)
 			return nil
@@ -200,10 +198,6 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "3":
 			if m.state == StateSelection && len(m.options) > 2 {
 				m.options[2].Selected = !m.options[2].Selected
-			}
-		case "4":
-			if m.state == StateSelection && len(m.options) > 3 {
-				m.options[3].Selected = !m.options[3].Selected
 			}
 		case "enter":
 			if m.state == StateSelection {
@@ -263,7 +257,7 @@ func (m AppModel) View() string {
 
 	if m.state == StateSelection {
 		var sb strings.Builder
-		sb.WriteString(titleStyle.Render("Select Scanners to Run (Press 1, 2, 3, 4 to toggle, Enter to start):") + "\n\n")
+		sb.WriteString(titleStyle.Render("Select Scanners to Run (Press 1, 2, 3 to toggle, Enter to start):") + "\n\n")
 		for i, opt := range m.options {
 			mark := inactiveStyle.Render("✗")
 			nameStyle := dimStyle
