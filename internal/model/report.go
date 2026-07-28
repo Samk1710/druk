@@ -58,4 +58,31 @@ type Report struct {
 	SAST          []SASTFinding
 	Secrets       []SecretFinding
 	AttackSurface AttackSurface
+	SupplyChain   SupplyChain
+	ThreatModel   ThreatModel
+}
+
+type SupplyChain struct {
+	Score      float64
+	Checks     []ScorecardCheck
+	IsScorecard bool // true if we pulled from OpenSSF API
+}
+
+type ScorecardCheck struct {
+	Name        string
+	Score       int
+	Reason      string
+	Description string
+}
+
+type ThreatModel struct {
+	Assets          []string
+	TrustBoundaries []string
+	STRIDE          []STRIDERisk
+}
+
+type STRIDERisk struct {
+	Category    string // Spoofing, Tampering, etc.
+	Description string
+	Mitigation  string
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"golang.org/x/sync/errgroup"
 	"strings"
+	"sync"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -16,7 +17,14 @@ import (
 	"github.com/samk/druk/internal/sbom"
 	"github.com/samk/druk/internal/scan"
 	"github.com/samk/druk/internal/secrets"
+	"github.com/samk/druk/internal/supplychain"
+	"github.com/samk/druk/internal/threatmodel"
 )
+
+type StatusMsg struct {
+	Module string
+	Status string
+}
 
 type State int
 
@@ -48,6 +56,7 @@ type AppModel struct {
 	dashboard dashboardModel
 	options   []ScannerOption
 	cursor    int
+	statuses  *sync.Map
 }
 
 func InitialModel(target string, sca, sast, secrets, autoStart bool) AppModel {
@@ -67,10 +76,11 @@ func InitialModel(target string, sca, sast, secrets, autoStart bool) AppModel {
 	}
 
 	return AppModel{
-		target:  target,
-		state:   state,
-		spinner: s,
-		options: opts,
+		target:   target,
+		state:    state,
+		spinner:  s,
+		options:  opts,
+		statuses: &sync.Map{},
 	}
 }
 
@@ -101,60 +111,70 @@ func (m AppModel) loadRepoCmd() tea.Msg {
 	var secretFindings []model.SecretFinding
 	var surface model.AttackSurface
 	var cpgPath string
+	var sc model.SupplyChain
+	var tm model.ThreatModel
 
 	if runSBOM {
+		m.statuses.Store("SBOM & CVE", "Generating CycloneDX SBOM...")
 		eg.Go(func() error {
-			var err error
-			components, err = sbom.Generate(path)
-			if err != nil {
-				return fmt.Errorf("sbom generation failed: %w", err)
+			components, _ = sbom.Generate(path)
+			m.statuses.Store("SBOM & CVE", "Querying VulnerableCode & OSV...")
+			findings, _ = cve.QueryVulnerableCode(components)
+			if len(findings) == 0 {
+				findings, _ = cve.QueryOSV(components)
 			}
-
-			findings, err = cve.QueryVulnerableCode(components)
-			if err != nil {
-				// OSV Fallback
-				findings, err = cve.QueryOSV(components)
-				if err != nil {
-					return fmt.Errorf("cve querying failed (both VC and OSV): %w", err)
-				}
-			}
+			m.statuses.Store("SBOM & CVE", "Done.")
 			return nil
 		})
 	}
 
 	if runSAST {
+		m.statuses.Store("SAST", "Running Semgrep rules...")
 		eg.Go(func() error {
-			var err error
-			sastFindings, err = scan.RunSemgrep(path)
-			if err != nil {
-				// Ignore missing binary gracefully
-			}
+			sastFindings, _ = scan.RunSemgrep(path)
+			m.statuses.Store("SAST", "Done.")
 			return nil
 		})
 	}
 
 	if runSecrets {
+		m.statuses.Store("Secrets", "Running Gitleaks...")
 		eg.Go(func() error {
-			var err error
-			secretFindings, err = secrets.RunGitleaks(path)
-			if err != nil {
-				// Ignore missing binary gracefully
-			}
+			secretFindings, _ = secrets.RunGitleaks(path)
+			m.statuses.Store("Secrets", "Done.")
 			return nil
 		})
 	}
 
+	m.statuses.Store("Attack Surface", "Detecting Entrypoints...")
 	eg.Go(func() error {
 		surface, _ = attacksurface.Detect(path)
+		m.statuses.Store("Attack Surface", "Done.")
 		return nil
 	})
 
 	if runSBOM {
+		m.statuses.Store("Reachability", "Checking CPG Cache...")
 		eg.Go(func() error {
 			cpgPath, _ = reachability.GenerateCPG(path, report.Repo.Language)
+			m.statuses.Store("Reachability", "Done.")
 			return nil
 		})
 	}
+
+	m.statuses.Store("Supply Chain", "Querying OpenSSF API...")
+	eg.Go(func() error {
+		sc = supplychain.FetchScorecard(path)
+		m.statuses.Store("Supply Chain", "Done.")
+		return nil
+	})
+
+	m.statuses.Store("Threat Model", "Running STRIDE heuristics...")
+	eg.Go(func() error {
+		tm = threatmodel.Generate(path)
+		m.statuses.Store("Threat Model", "Done.")
+		return nil
+	})
 
 	if err := eg.Wait(); err != nil {
 		if cleanup != nil {
@@ -168,6 +188,8 @@ func (m AppModel) loadRepoCmd() tea.Msg {
 	report.SAST = sastFindings
 	report.Secrets = secretFindings
 	report.AttackSurface = surface
+	report.SupplyChain = sc
+	report.ThreatModel = tm
 
 	// Run Reachability Analysis on findings if CPG was generated
 	if cpgPath != "" && len(report.Findings) > 0 {
@@ -283,8 +305,37 @@ func (m AppModel) View() string {
 		if targetDisplay == "" || targetDisplay == "." {
 			targetDisplay = "local directory"
 		}
+		
+		var sb strings.Builder
 		scanMsg := lipgloss.NewStyle().Foreground(lipgloss.Color("#E0E0E0")).Render(fmt.Sprintf("Scanning repository: %s", targetDisplay))
-		return fmt.Sprintf("\n\n   %s %s\n\n", m.spinner.View(), scanMsg)
+		sb.WriteString(fmt.Sprintf("\n\n   %s %s\n\n", m.spinner.View(), scanMsg))
+
+		sb.WriteString(dimStyle.MarginLeft(6).Render("Live Progress:") + "\n")
+
+		// Predefined keys to maintain order
+		keys := []string{
+			"SBOM & CVE",
+			"SAST",
+			"Secrets",
+			"Attack Surface",
+			"Reachability",
+			"Supply Chain",
+			"Threat Model",
+		}
+
+		for _, k := range keys {
+			if val, ok := m.statuses.Load(k); ok {
+				status := val.(string)
+				color := "205" // pink (running)
+				if status == "Done." {
+					color = "10" // green (done)
+				}
+				stStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render(status)
+				sb.WriteString(fmt.Sprintf("      %-20s %s\n", k, stStyle))
+			}
+		}
+		sb.WriteString("\n")
+		return sb.String()
 	}
 
 	if m.quitting {
