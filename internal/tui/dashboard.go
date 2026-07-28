@@ -189,7 +189,8 @@ func (m dashboardModel) View() string {
 				}
 			}
 		} else {
-			sc.WriteString("OpenSSF Scorecard data unavailable (Local or Private Repository).")
+			sc.WriteString("OpenSSF Scorecard data unavailable.\n")
+			sc.WriteString(dimStyle.Render("(Repository is local, private, or not currently tracked by OpenSSF)"))
 		}
 		content = sc.String()
 	case 5:
