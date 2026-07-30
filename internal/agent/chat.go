@@ -7,7 +7,16 @@ import (
 // ChatLoop orchestrates the conversation. It sends the message history,
 // executes any requested tools, and appends the results until the model returns a final text answer.
 func ChatLoop(client *LLMClient, report *model.Report, messages []Message) ([]Message, error) {
+	budget := NewBudget(15) // Max 15 tool-calling turns
+
 	for {
+		if err := budget.Increment(); err != nil {
+			// If budget exceeded, return the messages with a final error message appended
+			msg := Message{Role: "assistant", Content: err.Error()}
+			messages = append(messages, msg)
+			return messages, err
+		}
+
 		respMsg, err := client.Chat(messages, AvailableTools)
 		if err != nil {
 			return messages, err
