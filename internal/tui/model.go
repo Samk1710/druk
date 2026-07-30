@@ -219,26 +219,35 @@ func (m AppModel) loadRepoCmd() tea.Msg {
 func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "q", "esc", "ctrl+c":
-			m.quitting = true
-			return m, tea.Quit
-		case "1":
-			if m.state == StateSelection && len(m.options) > 0 {
-				m.options[0].Selected = !m.options[0].Selected
+		if m.state == StateDone && m.dashboard.activeTab == 6 {
+			// In chat tab, only let ctrl+c quit. Let Dashboard handle everything else.
+			if msg.String() == "ctrl+c" {
+				m.quitting = true
+				return m, tea.Quit
 			}
-		case "2":
-			if m.state == StateSelection && len(m.options) > 1 {
-				m.options[1].Selected = !m.options[1].Selected
-			}
-		case "3":
-			if m.state == StateSelection && len(m.options) > 2 {
-				m.options[2].Selected = !m.options[2].Selected
-			}
-		case "enter":
-			if m.state == StateSelection {
-				m.state = StateScanning
-				return m, tea.Batch(m.spinner.Tick, m.loadRepoCmd)
+			// Don't intercept q, esc, or numbers
+		} else {
+			switch msg.String() {
+			case "q", "esc", "ctrl+c":
+				m.quitting = true
+				return m, tea.Quit
+			case "1":
+				if m.state == StateSelection && len(m.options) > 0 {
+					m.options[0].Selected = !m.options[0].Selected
+				}
+			case "2":
+				if m.state == StateSelection && len(m.options) > 1 {
+					m.options[1].Selected = !m.options[1].Selected
+				}
+			case "3":
+				if m.state == StateSelection && len(m.options) > 2 {
+					m.options[2].Selected = !m.options[2].Selected
+				}
+			case "enter":
+				if m.state == StateSelection {
+					m.state = StateScanning
+					return m, tea.Batch(m.spinner.Tick, m.loadRepoCmd)
+				}
 			}
 		}
 	case RepoLoadedMsg:

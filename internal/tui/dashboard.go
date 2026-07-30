@@ -5,8 +5,10 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/table"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/samk/druk/internal/agent"
 	"github.com/samk/druk/internal/model"
 )
 
@@ -22,6 +24,9 @@ type dashboardModel struct {
 	sastTable    table.Model
 	secretsTable table.Model
 	report       *model.Report
+	chatInput    textinput.Model
+	chatHistory  []string
+	chatLoading  bool
 }
 
 func newDashboard(report *model.Report) dashboardModel {
@@ -83,45 +88,125 @@ func newDashboard(report *model.Report) dashboardModel {
 	)
 	tSecrets.SetStyles(s)
 
+	ti := textinput.New()
+	ti.Placeholder = "Ask a question about the security report..."
+	ti.Focus()
+	ti.CharLimit = 256
+	ti.Width = 80
+
 	return dashboardModel{
 		activeTab:    0,
 		vulnTable:    tVuln,
 		sastTable:    tSast,
 		secretsTable: tSecrets,
 		report:       report,
+		chatInput:    ti,
+		chatHistory:  []string{"Agent: I am a grounded Q&A agent. I can search findings, get call paths, and view supply chain scores. How can I help?"},
 	}
 }
 
+type agentRequestMsg struct {
+	prompt string
+}
+
+type agentResponseMsg struct {
+	messages []agent.Message
+	err      error
+}
+
 func (m dashboardModel) Update(msg tea.Msg) (dashboardModel, tea.Cmd) {
+	var cmd tea.Cmd
+
 	switch msg := msg.(type) {
+	case agentResponseMsg:
+		m.chatLoading = false
+		if msg.err != nil {
+			m.chatHistory = append(m.chatHistory, "Error: "+msg.err.Error())
+		} else {
+			// Update history
+			m.chatHistory = []string{"Agent: I am a grounded Q&A agent. I can search findings, get call paths, and view supply chain scores. How can I help?"}
+			for _, amsg := range msg.messages {
+				if amsg.Role == "user" {
+					m.chatHistory = append(m.chatHistory, "You: "+amsg.Content)
+				} else if amsg.Role == "assistant" && amsg.Content != "" {
+					m.chatHistory = append(m.chatHistory, "Agent: "+amsg.Content)
+				}
+			}
+		}
+		return m, nil
+
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "tab":
-			m.activeTab = (m.activeTab + 1) % 6
+			m.activeTab = (m.activeTab + 1) % 7
 			return m, nil
 		case "shift+tab":
-			m.activeTab = (m.activeTab - 1 + 6) % 6
+			m.activeTab = (m.activeTab - 1 + 7) % 7
 			return m, nil
-		case "1", "2", "3", "4", "5", "6":
-			switch msg.String() {
-			case "1": m.activeTab = 0
-			case "2": m.activeTab = 1
-			case "3": m.activeTab = 2
-			case "4": m.activeTab = 3
-			case "5": m.activeTab = 4
-			case "6": m.activeTab = 5
+		case "enter":
+			if m.activeTab == 6 && !m.chatLoading && m.chatInput.Value() != "" {
+				val := m.chatInput.Value()
+				m.chatInput.SetValue("")
+				m.chatHistory = append(m.chatHistory, "You: "+val)
+				m.chatLoading = true
+
+				// Reconstruct conversation for the agent
+				var msgs []agent.Message
+				for _, h := range m.chatHistory {
+					if strings.HasPrefix(h, "You: ") {
+						msgs = append(msgs, agent.Message{Role: "user", Content: strings.TrimPrefix(h, "You: ")})
+					} else if strings.HasPrefix(h, "Agent: ") && h != "Agent: I am a grounded Q&A agent. I can search findings, get call paths, and view supply chain scores. How can I help?" {
+						msgs = append(msgs, agent.Message{Role: "assistant", Content: strings.TrimPrefix(h, "Agent: ")})
+					}
+				}
+				
+				report := m.report // capture for closure
+				cmd = func() tea.Msg {
+					client, err := agent.NewClient()
+					if err != nil {
+						return agentResponseMsg{err: err}
+					}
+					// Add system prompt to guide it to use tools
+					systemMsg := agent.Message{
+						Role: "system",
+						Content: "You are a helpful security agent. You must use the provided tools to answer questions about the security report. Do not guess or hallucinate answers.",
+					}
+					fullMsgs := append([]agent.Message{systemMsg}, msgs...)
+					
+					finalMsgs, err := agent.ChatLoop(client, report, fullMsgs)
+					// strip system prompt
+					if len(finalMsgs) > 0 {
+						finalMsgs = finalMsgs[1:]
+					}
+					return agentResponseMsg{messages: finalMsgs, err: err}
+				}
+				return m, cmd
 			}
-			return m, nil
+		case "1", "2", "3", "4", "5", "6", "7":
+			// Don't intercept number keys if we are typing in the chat tab
+			if m.activeTab != 6 {
+				switch msg.String() {
+				case "1": m.activeTab = 0
+				case "2": m.activeTab = 1
+				case "3": m.activeTab = 2
+				case "4": m.activeTab = 3
+				case "5": m.activeTab = 4
+				case "6": m.activeTab = 5
+				case "7": m.activeTab = 6
+				}
+				return m, nil
+			}
 		}
 	}
 
-	var cmd tea.Cmd
 	if m.activeTab == 1 {
 		m.vulnTable, cmd = m.vulnTable.Update(msg)
 	} else if m.activeTab == 2 {
 		m.sastTable, cmd = m.sastTable.Update(msg)
 	} else if m.activeTab == 3 {
 		m.secretsTable, cmd = m.secretsTable.Update(msg)
+	} else if m.activeTab == 6 {
+		m.chatInput, cmd = m.chatInput.Update(msg)
 	}
 	return m, cmd
 }
@@ -134,6 +219,7 @@ func (m dashboardModel) View() string {
 		"Secrets",
 		"Supply Chain",
 		"Threat Model",
+		"Chat",
 	}
 	var renderedTabs []string
 	for i, t := range tabs {
@@ -254,6 +340,17 @@ func (m dashboardModel) View() string {
 		}
 
 		content = tm.String()
+	case 6:
+		// Chat View
+		var chat strings.Builder
+		for _, msg := range m.chatHistory {
+			chat.WriteString(msg + "\n\n")
+		}
+		if m.chatLoading {
+			chat.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Render("Agent is thinking... (running tools)") + "\n\n")
+		}
+		chat.WriteString(m.chatInput.View())
+		content = chat.String()
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, row, tabWindowStyle.Render(content))
