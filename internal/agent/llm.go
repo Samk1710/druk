@@ -12,9 +12,10 @@ import (
 
 // LLMClient represents a generic OpenAI-compatible API client
 type LLMClient struct {
-	BaseURL string
-	APIKey  string
-	Model   string
+	BaseURL       string
+	APIKey        string
+	Model         string
+	FallbackModel string
 }
 
 // NewClient initializes the LLM client based on environment variables.
@@ -48,9 +49,10 @@ func NewClient() (*LLMClient, error) {
 	}
 
 	return &LLMClient{
-		BaseURL: "https://api.groq.com/openai/v1/chat/completions",
-		APIKey:  key,
-		Model:   "llama3-8b-8192", // Fast default for reasoning
+		BaseURL:       "https://api.groq.com/openai/v1/chat/completions",
+		APIKey:        key,
+		Model:         "llama-3.1-8b-instant", // Fast default for reasoning
+		FallbackModel: "llama3-8b-8192",       // Fallback if instant is decommissioned or fails
 	}, nil
 }
 
@@ -119,6 +121,15 @@ func (c *LLMClient) Generate(systemPrompt, userPrompt string) (string, error) {
 
 	respMsg, err := c.doRequest(jsonData)
 	if err != nil {
+		if c.FallbackModel != "" {
+			reqBody.Model = c.FallbackModel
+			jsonData, _ = json.Marshal(reqBody)
+			respMsgFallback, errFallback := c.doRequest(jsonData)
+			if errFallback != nil {
+				return "", fmt.Errorf("primary error: %v, fallback error: %v", err, errFallback)
+			}
+			return respMsgFallback.Content, nil
+		}
 		return "", err
 	}
 	return respMsg.Content, nil
@@ -138,7 +149,20 @@ func (c *LLMClient) Chat(messages []Message, tools []Tool) (Message, error) {
 		return Message{}, err
 	}
 
-	return c.doRequest(jsonData)
+	respMsg, err := c.doRequest(jsonData)
+	if err != nil {
+		if c.FallbackModel != "" {
+			reqBody.Model = c.FallbackModel
+			jsonData, _ = json.Marshal(reqBody)
+			respMsgFallback, errFallback := c.doRequest(jsonData)
+			if errFallback != nil {
+				return Message{}, fmt.Errorf("primary error: %v, fallback error: %v", err, errFallback)
+			}
+			return respMsgFallback, nil
+		}
+		return Message{}, err
+	}
+	return respMsg, nil
 }
 
 func (c *LLMClient) doRequest(jsonData []byte) (Message, error) {

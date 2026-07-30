@@ -266,11 +266,23 @@ func (m dashboardModel) View() string {
 
 		content = sb.String()
 	case 1:
-		content = m.vulnTable.View()
+		if len(m.report.Findings) == 0 {
+			content = lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Bold(true).Render("\n\n  ✅ No vulnerabilities found!")
+		} else {
+			content = m.vulnTable.View()
+		}
 	case 2:
-		content = m.sastTable.View()
+		if len(m.report.SAST) == 0 {
+			content = lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Bold(true).Render("\n\n  ✅ No SAST findings found!")
+		} else {
+			content = m.sastTable.View()
+		}
 	case 3:
-		content = m.secretsTable.View()
+		if len(m.report.Secrets) == 0 {
+			content = lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Bold(true).Render("\n\n  ✅ No secrets found!")
+		} else {
+			content = m.secretsTable.View()
+		}
 	case 4:
 		// Supply Chain View
 		var sc strings.Builder
