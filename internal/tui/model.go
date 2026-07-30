@@ -19,6 +19,7 @@ import (
 	"github.com/samk/druk/internal/secrets"
 	"github.com/samk/druk/internal/supplychain"
 	"github.com/samk/druk/internal/threatmodel"
+	"github.com/samk/druk/internal/agent"
 )
 
 type StatusMsg struct {
@@ -57,9 +58,10 @@ type AppModel struct {
 	options   []ScannerOption
 	cursor    int
 	statuses  *sync.Map
+	narrate   bool
 }
 
-func InitialModel(target string, sca, sast, secrets, autoStart bool) AppModel {
+func InitialModel(target string, sca, sast, secrets, autoStart, narrate bool) AppModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
@@ -81,6 +83,7 @@ func InitialModel(target string, sca, sast, secrets, autoStart bool) AppModel {
 		spinner:  s,
 		options:  opts,
 		statuses: &sync.Map{},
+		narrate:  narrate,
 	}
 }
 
@@ -193,7 +196,18 @@ func (m AppModel) loadRepoCmd() tea.Msg {
 
 	// Run Reachability Analysis on findings if CPG was generated
 	if cpgPath != "" && len(report.Findings) > 0 {
+		m.statuses.Store("Reachability", "Analyzing call paths...")
 		reachability.Analyze(report, cpgPath)
+		m.statuses.Store("Reachability", "Done.")
+	}
+
+	// Run Agent Synthesizer
+	if m.narrate {
+		m.statuses.Store("Agent (AI)", "Synthesizing report narrative...")
+		report.AINarrative = agent.Synthesize(report)
+		m.statuses.Store("Agent (AI)", "Done.")
+	} else {
+		m.statuses.Store("Agent (AI)", "Skipped (run with --narrate)")
 	}
 
 	return RepoLoadedMsg{
@@ -321,6 +335,7 @@ func (m AppModel) View() string {
 			"Reachability",
 			"Supply Chain",
 			"Threat Model",
+			"Agent (AI)",
 		}
 
 		for _, k := range keys {

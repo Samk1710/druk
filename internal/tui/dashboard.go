@@ -150,12 +150,34 @@ func (m dashboardModel) View() string {
 	case 0:
 		var sb strings.Builder
 		sb.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FFFFFF")).Render("Analysis Complete\n\n"))
-		sb.WriteString(fmt.Sprintf("Detected Language: %s\n", lipgloss.NewStyle().Foreground(lipgloss.Color("#FF00FF")).Bold(true).Render(m.report.Repo.Language)))
-		sb.WriteString(fmt.Sprintf("Entrypoints:       %d\n\n", len(m.report.AttackSurface.Entrypoints)))
-		sb.WriteString(fmt.Sprintf("Dependencies:      %d\n", len(m.report.SBOM.Components)))
-		sb.WriteString(fmt.Sprintf("Vulnerabilities:   %d\n", len(m.report.Findings)))
-		sb.WriteString(fmt.Sprintf("SAST Issues:       %d\n", len(m.report.SAST)))
-		sb.WriteString(fmt.Sprintf("Secrets Found:     %d\n", len(m.report.Secrets)))
+		
+		// Metrics column
+		metrics := fmt.Sprintf("Detected Language: %s\n", lipgloss.NewStyle().Foreground(lipgloss.Color("#FF00FF")).Bold(true).Render(m.report.Repo.Language))
+		metrics += fmt.Sprintf("Entrypoints:       %d\n\n", len(m.report.AttackSurface.Entrypoints))
+		metrics += fmt.Sprintf("Dependencies:      %d\n", len(m.report.SBOM.Components))
+		metrics += fmt.Sprintf("Vulnerabilities:   %d\n", len(m.report.Findings))
+		metrics += fmt.Sprintf("SAST Issues:       %d\n", len(m.report.SAST))
+		metrics += fmt.Sprintf("Secrets Found:     %d\n", len(m.report.Secrets))
+
+		if m.report.AINarrative.Summary != "" {
+			var ai strings.Builder
+			ai.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Bold(true).Render(fmt.Sprintf("✦ AI Executive Summary (%s) ✦\n\n", m.report.AINarrative.ModelUsed)))
+			// Word wrap the summary roughly
+			ai.WriteString(m.report.AINarrative.Summary + "\n\n")
+			
+			ai.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Bold(true).Render("Prioritized Actions:\n"))
+			for i, action := range m.report.AINarrative.PrioritizedActions {
+				ai.WriteString(fmt.Sprintf("%d. %s\n", i+1, action))
+			}
+
+			// Render side by side
+			metricsBox := lipgloss.NewStyle().PaddingRight(4).Render(metrics)
+			aiBox := lipgloss.NewStyle().Width(80).Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("63")).Padding(1, 2).Render(ai.String())
+			sb.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, metricsBox, aiBox))
+		} else {
+			sb.WriteString(metrics)
+		}
+
 		content = sb.String()
 	case 1:
 		content = m.vulnTable.View()

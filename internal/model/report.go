@@ -60,6 +60,13 @@ type Report struct {
 	AttackSurface AttackSurface
 	SupplyChain   SupplyChain
 	ThreatModel   ThreatModel
+	AINarrative   AINarrative
+}
+
+type AINarrative struct {
+	Summary            string   `json:"summary"`
+	PrioritizedActions []string `json:"prioritized_actions"`
+	ModelUsed          string   `json:"model_used"`
 }
 
 type SupplyChain struct {

@@ -14,6 +14,7 @@ var (
 	runSecrets bool
 	runSCA     bool
 	runAll     bool
+	runNarrate bool
 )
 
 var analyzeCmd = &cobra.Command{
@@ -38,7 +39,7 @@ var analyzeCmd = &cobra.Command{
 			secrets = runSecrets || runAll
 		}
 
-		p := tea.NewProgram(tui.InitialModel(target, sca, sast, secrets, autoStart))
+		p := tea.NewProgram(tui.InitialModel(target, sca, sast, secrets, autoStart, runNarrate))
 		if _, err := p.Run(); err != nil {
 			fmt.Printf("Alas, there's been an error: %v", err)
 			os.Exit(1)
@@ -51,5 +52,6 @@ func init() {
 	analyzeCmd.Flags().BoolVar(&runSecrets, "secrets", false, "Run Secrets scanner (Gitleaks)")
 	analyzeCmd.Flags().BoolVar(&runSCA, "sca", false, "Run SCA scanner (SBOM & CVEs)")
 	analyzeCmd.Flags().BoolVar(&runAll, "all", false, "Run all scanners instantly")
+	analyzeCmd.Flags().BoolVar(&runNarrate, "narrate", false, "Run AI Synthesizer (requires DRUK_GROQ_API_KEY)")
 	rootCmd.AddCommand(analyzeCmd)
 }
