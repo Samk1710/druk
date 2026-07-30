@@ -1,97 +1,144 @@
-# Druk — Architecture
+# Druk
 
-Single-binary Go CLI that scans a repository and determines which CVEs are actually reachable, not just which ones are present. SBOM, CVE intelligence, SAST, and secret detection are fused with a Code Property Graph (CPG) so vulnerability severity is adjusted by reachability rather than relying solely on CVSS. The LLM is limited to planning and report generation—it never produces findings.
+<p align="center">
+  <img src="https://img.shields.io/badge/go-%2300ADD8.svg?style=for-the-badge&logo=go&logoColor=white" />
+  <img src="https://img.shields.io/badge/Status-v1.0-brightgreen?style=for-the-badge" />
+</p>
 
-## Why
+Druk is an agentic software supply chain and application security engine.
 
-Most SCA tools produce a list of known vulnerabilities. Very few determine whether the vulnerable function is actually reachable from code that an attacker can execute. That is the primary purpose of Druk. Everything else—SBOM generation, SAST, secret detection, and supply chain scoring—supports that objective.
+Most modern security tools generate a high volume of alerts for vulnerable dependencies. However, they rarely verify if the vulnerable function is actually called by the application code. This leads to alert fatigue and false positives.
 
----
+Druk addresses this by combining SBOM generation, CVE enrichment, SAST, Secrets detection, and OpenSSF Supply Chain scoring with Code Property Graph reachability analysis. It filters out dormant vulnerabilities and uses a lightweight LLM agent system to synthesize a human-readable threat model and answer questions about the security posture of the application.
 
-## Pipeline
+## Key Features
 
-                         ┌──────────────┐
-                         │  Ingestion   │  GitHub API / Local FS
-                         │  (Required)  │  errgroup fan-out, ~2-4 API calls
-                         └──────┬───────┘
-                                │
-                    ┌───────────┼────────────┬──────────────┐
-                    ▼           ▼            ▼              ▼
-               ┌────────┐  ┌────────┐  ┌───────────┐  ┌────────────┐
-               │  SBOM  │  │  SAST  │  │  Secrets  │  │  Attack    │
-               │ (Syft) │  │(Semgrep│  │(Gitleaks) │  │  Surface   │
-               └───┬────┘  │+Regex) │  └───────────┘  └────────────┘
-                   │        └────────┘
+1. **Reachability Analysis:** Druk maps CVE findings against an AppThreat Code Property Graph. A critical CVE that is never imported or called gets demoted. A CVE reachable from an entrypoint (like an HTTP handler) gets flagged as a priority.
+2. **Grounded Agentic AI:** Druk uses a multi-agent architecture (Planner -> Executor -> Synthesizer). The LLM is not given raw access to source code to prevent hallucination. It only receives the deterministic scan JSON.
+3. **Offline Capable:** By setting `DRUK_LLM_PROVIDER=ollama`, the entire AI pipeline runs locally on your machine without sending code telemetry to external APIs.
+4. **CI/CD Native:** Running `druk ci --fail-on reachable-critical` executes headlessly and returns a non-zero exit code to block a pull request only if a vulnerable dependency is actually reachable by an attacker.
+5. **Interactive TUI:** Druk features a real-time Bubble Tea terminal user interface to visualize the scan phases as they occur.
+
+## Architecture
+
+Druk is designed around a deterministic core wrapped in an agentic shell. This ensures that findings are verifiable and not hallucinated by the LLM.
+
+```text
+       ┌────────────────────────┐
+       │   User / CI Pipeline   │
+       └───────────┬────────────┘
+                   │  druk analyze
                    ▼
-              ┌─────────┐
-              │   CVE   │  OSV.dev + VulnerableCode + deps.dev
-              │ Enrich  │  Dedup by GHSA/CVE/OSV-ID alias
-              └────┬────┘
-                   ▼
-              ┌──────────────┐
-              │ Reachability │  AppThreat Atom → CPG → taint query
-              │  (The Point) │  Cached per commit hash
-              └──────┬───────┘
-                     ▼
-              ┌──────────────┐
-              │ Supply Chain │  OpenSSF Scorecard + Sigstore verify
-              │    Score     │
-              └──────┬───────┘
-                     ▼
-              ┌──────────────┐
-              │ Synthesizer  │  LLM, optional, reads report only
-              │  (LLM, Opt)  │  Writes narrative, never findings
-              └──────┬───────┘
-                     ▼
-              report.json → TUI / Table / MD / SARIF
+       ┌────────────────────────┐
+       │      Planner Agent     │ (Determines scan depth & tools)
+       └───────────┬────────────┘
+                   │
+  ┌────────────────▼──────────────────────────────────────────────┐
+  │               DETERMINISTIC CORE PIPELINE                     │
+  │                                                               │
+  │  ┌──────────────┐   ┌──────────────┐   ┌──────────────┐       │
+  │  │  Syft SBOM   │   │ Semgrep SAST │   │   Gitleaks   │       │
+  │  └──────┬───────┘   └──────┬───────┘   └──────┬───────┘       │
+  │         │                  │                  │               │
+  │  ┌──────▼───────┐   ┌──────▼───────┐          │               │
+  │  │ Vulnerable   │   │ Attack       │          │               │
+  │  │ Code / OSV   │   │ Surface      │          │               │
+  │  └──────┬───────┘   └──────┬───────┘          │               │
+  │         │                  │                  │               │
+  │         └────────┬─────────┘                  │               │
+  │                  ▼                            │               │
+  │           ┌─────────────┐                     │               │
+  │           │  AppThreat  │ (Code Property      │               │
+  │           │  atom (CPG) │  Graph generation)  │               │
+  │           └──────┬──────┘                     │               │
+  │                  │                            │               │
+  │           ┌──────▼──────┐                     │               │
+  │           │ Reachability│ (Validates call     │               │
+  │           │  Analysis   │  paths to CVEs)     │               │
+  │           └──────┬──────┘                     │               │
+  │                  │                            │               │
+  │           ┌──────▼──────┐                     │               │
+  │           │  Severity   │ (Demotes dormant    │               │
+  │           │ Re-Ranking  │  vulnerabilities)   │               │
+  │           └──────┬──────┘                     │               │
+  │                  │                            │               │
+  └──────────────────┼────────────────────────────┼───────────────┘
+                     │                            │
+             ┌───────▼────────────────────────────▼───────┐
+             │            CANONICAL JSON REPORT           │
+             └───────┬────────────────────────────┬───────┘
+                     │                            │
+  ┌──────────────────▼────────────┐ ┌─────────────▼───────────────────┐
+  │        AGENTIC AI SHELL       │ │         OUTPUT LAYER            │
+  │                               │ │                                 │
+  │ ┌───────────────────────────┐ │ │  ┌───────────────────────────┐  │
+  │ │     Synthesizer Agent     │ │ │  │  JSON / SARIF Exporters   │  │
+  │ │ (Writes Executive Summary │ │ │  │ (For GitHub Adv Security) │  │
+  │ │  & STRIDE Threat Model)   │ │ │  └───────────────────────────┘  │
+  │ └───────────────────────────┘ │ │                                 │
+  │                               │ │  ┌───────────────────────────┐  │
+  │ ┌───────────────────────────┐ │ │  │     Bubble Tea TUI        │  │
+  │ │       Q&A Chat Agent      ├─┼─┼─►│ (Live interactive report  │  │
+  │ │  (Grounded Tool-Calling)  │ │ │  │  with 7-pane dashboard)   │  │
+  │ └───────────────────────────┘ │ │  └───────────────────────────┘  │
+  └───────────────────────────────┘ └─────────────────────────────────┘
+```
 
-Boundaries between rows are synchronized with `errgroup.Wait()`. Every stage within a row executes concurrently.
+Druk implements a strict "Agentic Trinity":
+1. **The Planner Agent:** Analyzes the repository metadata (language, file size) and outputs a structured JSON configuration determining which heavy scanners to run.
+2. **The Synthesizer Agent:** Receives the deterministic JSON report and writes an executive summary and STRIDE threat model.
+3. **The Q&A Agent:** A grounded tool-calling loop (using `search_findings`, `get_call_path`, `get_supply_chain_score`). It executes local Go functions to read the report rather than guessing, enforcing a strict token budget to prevent runaway loops.
 
----
+### Supported LLM Providers
+- **Groq:** (Default) Fast inference using `llama3-8b-8192`. Requires `DRUK_GROQ_API_KEY`.
+- **Ollama:** (Local) Fully air-gapped security. Requires `DRUK_LLM_PROVIDER=ollama`.
 
-## Why Deterministic-First
+## Installation
 
-All findings originate from deterministic tools (Syft, OSV, Semgrep, Gitleaks, Atom, and Scorecard). The LLM layer operates only on the completed `Report` struct. It may generate summaries and prioritize existing findings, but it cannot introduce new CVEs or security issues.
+```bash
+# Clone the repository
+git clone https://github.com/Samk1710/druk.git
+cd druk
 
-Running with `--no-llm` (the default when no API key is configured) removes only the narrative layer. Every finding remains available and continues to be ranked by reachability. This design keeps the scanner fully auditable and ensures CI pipelines never depend on external LLM services.
+# Build the binary
+go build -o druk main.go
+sudo mv druk /usr/local/bin/
 
----
+# Check dependencies
+druk setup
+```
 
-## Reachability: The Core Differentiator
+**Requirements:** Druk relies on standard scanners under the hood. You should have `syft` and `semgrep` installed in your path. The `druk setup` command will provide installation instructions if they are missing.
 
-OSV and VulnerableCode identify whether a package version is affected by a CVE. That information is necessary but insufficient—many reported vulnerabilities exist in dead code paths or development dependencies that are never executed.
+## Usage
 
-Druk uses AppThreat Atom to construct a Code Property Graph (CPG). For advisories that identify an affected symbol, it performs path queries from detected entry points (HTTP handlers, CLI arguments, queue consumers, etc.) to the vulnerable function.
+### 1. The Interactive TUI
+To scan a local repository using the terminal UI:
+```bash
+druk analyze . 
+```
 
-Each vulnerability is classified as one of three outcomes:
+To run all scanners and let the AI Synthesizer summarize the findings (requires `DRUK_GROQ_API_KEY`):
+```bash
+druk analyze --all --narrate .
+```
 
-* **Reachable**
-* **Unreachable**
-* **Unknown** (unsupported language or Atom unavailable)
+To let the Planner Agent automatically determine which scanners to run based on repository size:
+```bash
+druk analyze --auto .
+```
 
-Unsupported scenarios degrade gracefully and never block the scan.
+### 2. CI/CD Mode (Headless)
+To run Druk in a CI pipeline and fail the build if reachable vulnerabilities are found:
+```bash
+druk ci --fail-on reachable-critical .
+```
 
-On internal fixture repositories, reachability analysis consistently reduces the list of reported CVEs from approximately 40–50 down to only a handful requiring investigation. That reduction is the primary value the tool provides.
+### 3. Data Exports
+Export the final report to JSON or SARIF (for GitHub Advanced Security):
+```bash
+druk analyze --output sarif > results.sarif
+```
 
----
-
-
-## Agents vs. "Agents"
-
-The system contains only two LLM-powered components.
-
-The **Planner** determines which optional stages should execute based on repository characteristics. It produces structured JSON and falls back to default behaviour if schema validation fails.
-
-The **Synthesizer** converts the completed report into a human-readable summary and prioritized action list. Its output is validated against the report's finding IDs; references to non-existent findings trigger a retry before falling back to a deterministic template.
-
-`druk chat` operates exclusively on the completed report through a constrained tool interface (`searchFindings`, `getCallPath`, and `getSBOMComponent`). The model has no direct access to source files or shell execution, preventing it from inventing vulnerabilities that were never detected.
-
-Every other component in the pipeline is conventional Go code orchestrating deterministic analysis tools. Describing the entire pipeline as "AI agents" would be inaccurate; only two components use an LLM.
-
----
-
-## Known Gaps
-
-* Reachability analysis currently supports Go and JavaScript/TypeScript. Python and Java support will be added as AppThreat's CPG coverage matures.
-* CPG construction is the slowest stage (20–60 seconds on a cold cache). Caching by commit hash significantly improves repeated scans, although the initial analysis of large repositories remains expensive.
-* Supply chain scoring relies partly on OpenSSF Scorecard's public dataset. Repositories that have not yet been indexed receive a reduced set of supply chain signals.
+## License
+MIT License.
