@@ -5,16 +5,19 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/samk/druk/internal/pipeline"
+	"github.com/samk/druk/internal/render"
 	"github.com/samk/druk/internal/tui"
 	"github.com/spf13/cobra"
 )
 
 var (
-	runSAST    bool
-	runSecrets bool
-	runSCA     bool
-	runAll     bool
-	runNarrate bool
+	runSAST      bool
+	runSecrets   bool
+	runSCA       bool
+	runAll       bool
+	runNarrate   bool
+	outputFormat string
 )
 
 var analyzeCmd = &cobra.Command{
@@ -39,6 +42,20 @@ var analyzeCmd = &cobra.Command{
 			secrets = runSecrets || runAll
 		}
 
+		if outputFormat == "json" || outputFormat == "sarif" {
+			report, err := pipeline.RunHeadless(target, sca, sast, secrets, runNarrate)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Pipeline error: %v\n", err)
+				os.Exit(1)
+			}
+			if outputFormat == "json" {
+				render.JSON(os.Stdout, report)
+			} else {
+				render.SARIF(os.Stdout, report)
+			}
+			return
+		}
+
 		p := tea.NewProgram(tui.InitialModel(target, sca, sast, secrets, autoStart, runNarrate))
 		if _, err := p.Run(); err != nil {
 			fmt.Printf("Alas, there's been an error: %v", err)
@@ -53,5 +70,6 @@ func init() {
 	analyzeCmd.Flags().BoolVar(&runSCA, "sca", false, "Run SCA scanner (SBOM & CVEs)")
 	analyzeCmd.Flags().BoolVar(&runAll, "all", false, "Run all scanners instantly")
 	analyzeCmd.Flags().BoolVar(&runNarrate, "narrate", false, "Run AI Synthesizer (requires DRUK_GROQ_API_KEY)")
+	analyzeCmd.Flags().StringVarP(&outputFormat, "output", "o", "tui", "Output format (tui, json, sarif)")
 	rootCmd.AddCommand(analyzeCmd)
 }

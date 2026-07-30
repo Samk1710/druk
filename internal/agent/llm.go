@@ -18,8 +18,30 @@ type LLMClient struct {
 }
 
 // NewClient initializes the LLM client based on environment variables.
-// Prioritizes Groq if DRUK_GROQ_API_KEY is present.
+// Prioritizes DRUK_LLM_PROVIDER (groq, ollama). Defaults to groq.
 func NewClient() (*LLMClient, error) {
+	provider := os.Getenv("DRUK_LLM_PROVIDER")
+	if provider == "" {
+		provider = "groq"
+	}
+
+	if provider == "ollama" {
+		baseURL := os.Getenv("DRUK_OLLAMA_URL")
+		if baseURL == "" {
+			baseURL = "http://localhost:11434/v1/chat/completions" // Ollama OpenAI compat layer
+		}
+		model := os.Getenv("DRUK_OLLAMA_MODEL")
+		if model == "" {
+			model = "llama3" // Default ollama model
+		}
+		return &LLMClient{
+			BaseURL: baseURL,
+			APIKey:  "ollama", // API Key is ignored by Ollama but needed for struct
+			Model:   model,
+		}, nil
+	}
+
+	// Default to Groq
 	key := os.Getenv("DRUK_GROQ_API_KEY")
 	if key == "" {
 		return nil, fmt.Errorf("DRUK_GROQ_API_KEY not set")
